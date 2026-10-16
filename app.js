@@ -865,11 +865,44 @@
   }
 
   /* ---------------- edição de texto existente (estilo Acrobat) ------------- */
+  // Une trechos vizinhos da mesma linha (letras/palavras/pontuação contíguas)
+  // numa única unidade editável — evita sobras (ex.: o ponto final de uma
+  // frase que o PDF.js reporta como item separado).
+  function mergeTextRuns(items) {
+    const runs = [];
+    let cur = null;
+    for (const it of items) {
+      if (!it.str) continue;
+      const m = it.transform;
+      const angle = Math.atan2(m[1], m[0]);
+      if (cur) {
+        const gap = m[4] - cur.end;
+        const sameLine = Math.abs(m[5] - cur.f) < 2.5 && Math.abs(angle - cur.angle) < 0.05;
+        if (sameLine && gap > -1 && gap < 3.5) {
+          cur.str += it.str;
+          cur.end = m[4] + (it.width || 0);
+          cur.width = cur.end - cur.x;
+          continue;
+        }
+      }
+      cur = {
+        str: it.str,
+        transform: [m[0], m[1], m[2], m[3], m[4], m[5]],
+        width: it.width || 0,
+        fontName: it.fontName,
+        x: m[4], f: m[5], angle,
+        end: m[4] + (it.width || 0),
+      };
+      runs.push(cur);
+    }
+    return runs;
+  }
+
   async function getTextItems(srcIndex) {
     if (state.textCache.has(srcIndex)) return state.textCache.get(srcIndex);
     const page = await state.doc.getPage(srcIndex + 1);
     const tc = await page.getTextContent();
-    const data = { items: tc.items, styles: tc.styles };
+    const data = { items: mergeTextRuns(tc.items), styles: tc.styles };
     state.textCache.set(srcIndex, data);
     return data;
   }
@@ -971,10 +1004,11 @@
     const w = item.width || 0;
 
     // 1) apaga o texto original com um retângulo branco na área exata
+    //    (com uma folga extra para cobrir variações de métrica da fonte)
     if (w > 0) {
       page.drawRectangle({
-        x: ex - 0.5, y: ey - 1,
-        width: w + 1, height: fontH + 2,
+        x: ex - 0.75, y: ey - 1.5,
+        width: w + 2.5, height: fontH + 3.5,
         color: rgb(1, 1, 1),
         rotate: degrees(angleDeg),
       });

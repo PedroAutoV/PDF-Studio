@@ -338,7 +338,11 @@ button {
   outline: 1px dashed rgba(56, 189, 248, 0.65);
 }
 .text-span.edited {
-  background: rgba(52, 211, 153, 0.18);
+  background: #fff;      /* esconde o texto original por trás no editor */
+  outline: 1px solid rgba(52, 211, 153, 0.7);
+  border-radius: 2px;
+  padding: 0 2px;
+  margin: 0 -2px;
 }
 .text-span.editing {
   background: rgba(255, 255, 255, 0.95);

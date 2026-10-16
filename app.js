@@ -48,7 +48,7 @@
     ['fileInput', 'openBtn', 'emptyOpenBtn', 'rotateLBtn', 'rotateRBtn', 'moveLBtn',
      'moveRBtn', 'deleteBtn', 'textBtn', 'editTextBtn', 'sigBtn', 'exportBtn', 'fileName', 'pageCount',
      'selectAllBtn', 'thumbGrid', 'stageBox', 'previewStage', 'emptyState', 'pageWrap',
-     'pageCanvas', 'textLayer', 'overlay', 'elementBar', 'textEditBar', 'revertEditBtn', 'elEditBtn', 'elDeleteBtn', 'toast', 'busy',
+     'pageCanvas', 'textLayer', 'overlay', 'elementBar', 'textEditBar', 'revertEditBtn', 'blankEditBtn', 'elEditBtn', 'elDeleteBtn', 'toast', 'busy',
      'busyMsg', 'textModal', 'textTitle', 'txtContent', 'txtSize', 'txtColor', 'txtBold',
      'txtOk', 'txtCancel', 'sigModal', 'sigPanelDraw', 'sigPanelUpload', 'sigCanvas',
      'sigClear', 'sigCancel', 'sigUse', 'sigFile', 'sigPreview', 'sigPreviewWrap',
@@ -787,6 +787,18 @@
       });
     });
 
+    els.blankEditBtn.addEventListener('click', () => {
+      const p = getActive();
+      if (p && state.editSel != null) {
+        if (!state.edits.get(p.id)) state.edits.set(p.id, new Map());
+        state.edits.get(p.id).set(state.editSel, { text: '', color: state.editDefaultColor });
+        renderTextLayer();
+        toast('Texto apagado — ficará em branco no PDF exportado.');
+      } else {
+        toast('Toque num texto primeiro para selecioná-lo.');
+      }
+    });
+
     els.revertEditBtn.addEventListener('click', () => {
       const p = getActive();
       if (p && state.editSel != null) {
@@ -935,9 +947,11 @@
       const st = styles[item.fontName];
       const ascent = (st && st.ascent) || 0.8;
       const ed = edits ? edits.get(i) : null;
+      const blanked = ed && !ed.text;
 
       const span = document.createElement('div');
-      span.className = 'text-span' + (ed && ed.text !== item.str ? ' edited' : '');
+      span.className = 'text-span' +
+        (blanked ? ' blanked' : (ed && ed.text !== item.str ? ' edited' : ''));
       span.dataset.idx = i;
       span.textContent = ed ? ed.text : item.str;
       span.style.left = tx[4] + 'px';
@@ -945,7 +959,12 @@
       span.style.fontSize = fontHeight + 'px';
       span.style.width = Math.max(2, item.width * state.scale) + 'px';
       if (angle) span.style.transform = 'rotate(' + angle + 'rad)';
-      if (ed) { span.style.color = ed.color; span.title = 'Toque para editar novamente'; }
+      if (ed) {
+        span.style.color = ed.color;
+        span.title = blanked
+          ? 'Texto apagado — toque para digitar novamente'
+          : 'Toque para editar novamente';
+      }
 
       span.addEventListener('click', ev => beginSpanEdit(ev, span, i));
       span.addEventListener('blur', () => commitSpanEdit(span, item, i));

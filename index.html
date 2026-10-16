@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="description" content="Editor de PDF 100% no navegador: organize, gire, exclua páginas, adicione textos e assinaturas, e exporte sem servidor." />
+  <meta name="theme-color" content="#0b1120" />
+  <title>PDF Studio — Editor de PDF no navegador</title>
+
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: { 900: '#0b1120', 800: '#111a2e', 700: '#16213d' }
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- CSS personalizada -->
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Bibliotecas via CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/interactjs@1.10.27/dist/interact.min.js"></script>
+</head>
+
+<body>
+  <!-- ===================== TOOLBAR SUPERIOR ===================== -->
+  <header class="fixed top-0 inset-x-0 z-40 h-16 bg-ink-800/95 backdrop-blur border-b border-slate-700/60 select-none">
+    <div class="h-full px-2 sm:px-3 flex items-center gap-2 overflow-x-auto">
+
+      <div class="flex items-center gap-2 pr-2 shrink-0">
+        <div class="w-9 h-9 rounded-lg bg-sky-500/15 border border-sky-500/40 grid place-items-center text-sky-400 font-bold">PDF</div>
+        <div class="hidden sm:block leading-tight">
+          <div class="font-semibold text-sm text-white">PDF Studio</div>
+          <div id="fileName" class="text-[11px] text-slate-400 max-w-[170px] truncate">Nenhum arquivo</div>
+        </div>
+      </div>
+
+      <div class="h-8 w-px bg-slate-700 shrink-0"></div>
+
+      <button id="openBtn" class="btn btn-ghost" title="Abrir um arquivo PDF">
+        <span class="icon">📂</span><span class="lbl">Abrir</span>
+      </button>
+      <input id="fileInput" type="file" accept="application/pdf,.pdf" class="hidden" />
+
+      <button id="rotateLBtn" class="btn btn-ghost" title="Girar página 90° anti-horário">
+        <span class="icon">↺</span><span class="lbl">Girar esq.</span>
+      </button>
+      <button id="rotateRBtn" class="btn btn-ghost" title="Girar página 90° horário">
+        <span class="icon">↻</span><span class="lbl">Girar dir.</span>
+      </button>
+
+      <button id="moveLBtn" class="btn btn-ghost" title="Mover página para a esquerda">
+        <span class="icon">◀</span><span class="lbl">Mover</span>
+      </button>
+      <button id="moveRBtn" class="btn btn-ghost" title="Mover página para a direita">
+        <span class="lbl">Mover</span><span class="icon">▶</span>
+      </button>
+
+      <button id="deleteBtn" class="btn btn-danger" title="Excluir páginas selecionadas nas miniaturas">
+        <span class="icon">🗑</span><span class="lbl">Excluir</span>
+      </button>
+
+      <div class="h-8 w-px bg-slate-700 shrink-0"></div>
+
+      <button id="textBtn" class="btn btn-ghost" title="Adicionar caixa de texto na página atual">
+        <span class="icon">✏</span><span class="lbl">Texto</span>
+      </button>
+      <button id="sigBtn" class="btn btn-ghost" title="Adicionar assinatura (desenhar ou enviar PNG)">
+        <span class="icon">✍</span><span class="lbl">Assinatura</span>
+      </button>
+
+      <div class="ml-auto pl-2 shrink-0">
+        <button id="exportBtn" class="btn btn-primary" title="Salvar / exportar o PDF com as alterações">
+          <span class="icon">⤓</span><span class="lbl">Exportar</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- ===================== CONTEÚDO ===================== -->
+  <main class="mt-16 h-[calc(100vh-4rem)] flex flex-col lg:flex-row overflow-hidden">
+
+    <!-- Lateral: miniaturas das páginas -->
+    <aside class="shrink-0 border-b border-slate-700/60 lg:border-b-0 lg:border-r bg-ink-800/50 lg:w-72 lg:h-full flex flex-col">
+      <div class="flex items-center justify-between px-3 py-2 border-b border-slate-700/50">
+        <div class="text-[11px] uppercase tracking-wider text-slate-400">
+          Páginas <span id="pageCount" class="text-sky-400 font-semibold">0</span>
+        </div>
+        <button id="selectAllBtn" class="text-[11px] text-slate-400 hover:text-white">Marcar todas</button>
+      </div>
+      <div class="p-2 lg:flex-1 lg:overflow-hidden">
+        <div id="thumbGrid" class="thumb-grid">
+          <div class="text-xs text-slate-500 p-2">Abra um PDF para começar.</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Área principal: visualização -->
+    <section class="flex-1 min-h-0 flex flex-col">
+      <div id="previewStage" class="flex-1 min-h-0 overflow-hidden p-2 sm:p-4">
+        <div id="stageBox" class="w-full h-full flex items-center justify-center">
+
+          <!-- Estado vazio / drop zone -->
+          <div id="emptyState" class="drop-zone">
+            <div class="text-5xl mb-3">📄</div>
+            <h1 class="text-xl font-semibold text-white">Arraste um PDF aqui</h1>
+            <p class="text-sm text-slate-400 mt-1 mb-5">ou toque no botão abaixo para escolher um arquivo.<br />Tudo acontece no seu navegador — nada é enviado para servidores.</p>
+            <button id="emptyOpenBtn" class="btn btn-primary mx-auto">Selecionar arquivo PDF</button>
+            <div class="mt-6 flex flex-wrap justify-center gap-x-5 gap-y-1 text-[11px] text-slate-500">
+              <span>✓ Excluir / reordenar páginas</span>
+              <span>✓ Girar 90°</span>
+              <span>✓ Texto sobreposto</span>
+              <span>✓ Assinatura</span>
+            </div>
+          </div>
+
+          <!-- Página renderizada + camada de elementos -->
+          <div id="pageWrap" class="hidden relative shadow-[0_25px_60px_-15px_rgba(0,0,0,.85)]">
+            <canvas id="pageCanvas" class="block"></canvas>
+            <div id="overlay" class="absolute inset-0"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Rodapé: barra do elemento + dicas -->
+      <footer class="shrink-0 border-t border-slate-700/60 bg-ink-800/60 px-3 py-2 flex items-center gap-3 overflow-x-auto"
+              style="padding-bottom: max(.5rem, env(safe-area-inset-bottom));">
+        <div id="elementBar" class="hidden items-center gap-2 text-sm">
+          <span class="text-sky-400 whitespace-nowrap">Elemento selecionado</span>
+          <button id="elEditBtn" class="btn btn-ghost btn-sm">Editar texto</button>
+          <button id="elDeleteBtn" class="btn btn-danger btn-sm">Excluir</button>
+        </div>
+        <div class="text-[11px] text-slate-500 whitespace-nowrap">
+          Toque na página para editar • arraste os elementos para posicionar • nas miniaturas, use ◀ ▶ (ou arraste no desktop)
+        </div>
+      </footer>
+    </section>
+  </main>
+
+  <!-- ===================== MODAL: TEXTO ===================== -->
+  <div id="textModal" class="modal-backdrop hidden">
+    <div class="modal-panel">
+      <h2 id="textTitle" class="text-lg font-semibold text-white mb-4">Adicionar texto</h2>
+
+      <label class="label" for="txtContent">Texto</label>
+      <textarea id="txtContent" class="field textarea" placeholder="Digite o texto aqui..." rows="4"></textarea>
+
+      <div class="grid grid-cols-2 gap-3 mt-3">
+        <div>
+          <label class="label" for="txtSize">Tamanho (pt)</label>
+          <input id="txtSize" type="number" min="6" max="144" step="1" value="16" class="field" />
+        </div>
+        <div>
+          <label class="label" for="txtColor">Cor</label>
+          <input id="txtColor" type="color" value="#111827" class="field color-field" />
+        </div>
+      </div>
+
+      <label class="flex items-center gap-2 mt-3 text-sm text-slate-300 cursor-pointer">
+        <input id="txtBold" type="checkbox" class="w-4 h-4 accent-sky-500" /> Negrito
+      </label>
+
+      <div class="flex justify-end gap-2 mt-5">
+        <button id="txtCancel" class="btn btn-ghost">Cancelar</button>
+        <button id="txtOk" class="btn btn-primary">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODAL: ASSINATURA ===================== -->
+  <div id="sigModal" class="modal-backdrop hidden">
+    <div class="modal-panel max-w-2xl">
+      <h2 class="text-lg font-semibold text-white mb-4">Adicionar assinatura</h2>
+
+      <div class="flex gap-2 mb-4">
+        <button class="tab active" data-tab="draw">✏ Desenhar</button>
+        <button class="tab" data-tab="upload">⬆ Enviar imagem (PNG)</button>
+      </div>
+
+      <!-- Desenhar -->
+      <div id="sigPanelDraw">
+        <p class="hint">Desenhe com o dedo ou caneta na área abaixo. A assinatura é salva com fundo transparente.</p>
+        <canvas id="sigCanvas" class="sig-canvas"></canvas>
+        <div class="flex flex-wrap justify-between gap-2 mt-4">
+          <button id="sigClear" class="btn btn-ghost">Limpar</button>
+          <div class="flex gap-2">
+            <button id="sigCancel" class="btn btn-ghost">Cancelar</button>
+            <button id="sigUse" class="btn btn-primary">Usar assinatura</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Enviar -->
+      <div id="sigPanelUpload" class="hidden">
+        <p class="hint">Envie uma imagem PNG com fundo transparente (ou JPG).</p>
+        <label for="sigFile" class="drop-zone small block">
+          <div class="text-3xl mb-1">🖼</div>
+          <span class="text-sm text-slate-300">Toque para escolher a imagem</span>
+        </label>
+        <input id="sigFile" type="file" accept="image/png,image/jpeg" class="hidden" />
+        <div id="sigPreviewWrap" class="hidden mt-3">
+          <img id="sigPreview" class="sig-preview" alt="Prévia da assinatura" />
+        </div>
+        <div class="flex flex-wrap justify-end gap-2 mt-4">
+          <button id="sigCancel2" class="btn btn-ghost">Cancelar</button>
+          <button id="sigUseUpload" class="btn btn-primary" disabled>Usar assinatura</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== BUSY / TOAST ===================== -->
+  <div id="busy" class="hidden">
+    <div class="spinner"></div>
+    <div id="busyMsg" class="text-sm text-slate-200">Processando...</div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

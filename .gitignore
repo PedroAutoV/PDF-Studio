@@ -1,0 +1,15 @@
+# dependências são carregadas via CDN — nada para instalar
+node_modules/
+
+# artefatos de deploy locais
+.vercel/
+.netlify/
+.cache/
+dist/
+
+# editores / sistema
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/

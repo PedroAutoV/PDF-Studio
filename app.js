@@ -413,7 +413,15 @@
       }
 
       applyElementStyle(div, e);
-      attachInteractions(div, e);
+
+      // alvo de redimensionamento: canto superior direito
+      const handle = document.createElement('div');
+      handle.className = 'resize-handle';
+      handle.title = 'Redimensionar';
+      handle.innerHTML = '<span>⤡</span>';
+      div.appendChild(handle);
+
+      attachInteractions(div, e, handle);
 
       div.addEventListener('click', ev => { ev.stopPropagation(); selectElement(e.id); });
       div.addEventListener('dblclick', ev => {
@@ -426,7 +434,7 @@
     updateElementBar();
   }
 
-  function attachInteractions(div, e) {
+  function attachInteractions(div, e, handle) {
     interact(div)
       .draggable({
         listeners: {
@@ -441,7 +449,9 @@
         },
       })
       .resizable({
-        edges: { left: true, right: true, bottom: true, top: true },
+        // somente o botão do canto superior direito redimensiona;
+        // o restante do elemento move
+        edges: { top: handle, right: handle },
         listeners: {
           move(ev) {
             const dims = activeDims();

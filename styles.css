@@ -300,6 +300,39 @@ button {
   -webkit-user-drag: none;
 }
 
+/* ---------------- Alvo de redimensionamento (canto superior direito) -------- */
+.resize-handle {
+  position: absolute;
+  top: -15px;
+  right: -15px;
+  width: 32px;          /* alvo de toque confortável no dedo/caneta */
+  height: 32px;
+  border-radius: 999px;
+  background: #0ea5e9;
+  border: 2px solid #fff;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+  display: grid;
+  place-items: center;
+  cursor: nwse-resize;
+  touch-action: none;
+  z-index: 12;
+  opacity: 0.55;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+.resize-handle span {
+  font-size: 15px;
+  line-height: 1;
+  color: #04283f;
+  font-weight: 700;
+}
+.pdf-element.selected .resize-handle,
+.resize-handle:hover {
+  opacity: 1;
+}
+.resize-handle:active {
+  transform: scale(0.92);
+}
+
 /* ---------------- Modais ---------------- */
 .modal-backdrop {
   position: fixed;

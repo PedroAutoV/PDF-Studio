@@ -70,8 +70,11 @@
 
       <div class="h-8 w-px bg-slate-700 shrink-0"></div>
 
-      <button id="textBtn" class="btn btn-ghost" title="Adicionar caixa de texto na página atual">
-        <span class="icon">✏</span><span class="lbl">Texto</span>
+      <button id="editTextBtn" class="btn btn-ghost" title="Editar os textos já existentes no PDF (estilo Acrobat)">
+        <span class="icon">🖍</span><span class="lbl">Editar</span>
+      </button>
+      <button id="textBtn" class="btn btn-ghost" title="Adicionar caixa de texto nova na página atual">
+        <span class="icon">＋</span><span class="lbl">Texto</span>
       </button>
       <button id="sigBtn" class="btn btn-ghost" title="Adicionar assinatura (desenhar ou enviar PNG)">
         <span class="icon">✍</span><span class="lbl">Assinatura</span>
@@ -126,6 +129,7 @@
           <!-- Página renderizada + camada de elementos -->
           <div id="pageWrap" class="hidden relative shadow-[0_25px_60px_-15px_rgba(0,0,0,.85)]">
             <canvas id="pageCanvas" class="block"></canvas>
+            <div id="textLayer" class="absolute inset-0 overflow-hidden"></div>
             <div id="overlay" class="absolute inset-0"></div>
           </div>
 
@@ -139,6 +143,14 @@
           <span class="text-sky-400 whitespace-nowrap">Elemento selecionado</span>
           <button id="elEditBtn" class="btn btn-ghost btn-sm">Editar texto</button>
           <button id="elDeleteBtn" class="btn btn-danger btn-sm">Excluir</button>
+        </div>
+        <div id="textEditBar" class="hidden items-center gap-2 text-sm">
+          <span class="text-emerald-400 whitespace-nowrap">🖍 Edição: toque num texto do PDF</span>
+          <span class="text-[11px] text-slate-500">cor:</span>
+          <button class="color-chip" data-color="#111827" style="background:#111827" title="Preto"></button>
+          <button class="color-chip" data-color="#1d4ed8" style="background:#1d4ed8" title="Azul"></button>
+          <button class="color-chip" data-color="#b91c1c" style="background:#b91c1c" title="Vermelho"></button>
+          <button id="revertEditBtn" class="btn btn-ghost btn-sm">Reverter</button>
         </div>
         <div class="text-[11px] text-slate-500 whitespace-nowrap">
           Arraste o elemento para mover • toque no botão azul ⤡ do canto superior direito para redimensionar

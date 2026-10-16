@@ -28,10 +28,17 @@
     scale: 1,              // px por ponto na visualização atual
     seq: 1,
     thumbToken: 0,
+    // modo "editar texto existente" (estilo Acrobat)
+    editMode: false,
+    edits: new Map(),      // pageId -> Map(itemIndex -> { text, color })
+    textCache: new Map(),  // srcIndex -> { items, styles } do getTextContent()
+    editSel: null,         // índice do trecho selecionado na camada de edição
+    editDefaultColor: '#111827',
   };
 
   let previewToken = 0;
   let previewRenderTask = null;
+  let textLayerToken = 0;
   let dragPageId = null;
 
   const els = {};
@@ -39,9 +46,9 @@
   /* ---------------- init ---------------- */
   function init() {
     ['fileInput', 'openBtn', 'emptyOpenBtn', 'rotateLBtn', 'rotateRBtn', 'moveLBtn',
-     'moveRBtn', 'deleteBtn', 'textBtn', 'sigBtn', 'exportBtn', 'fileName', 'pageCount',
+     'moveRBtn', 'deleteBtn', 'textBtn', 'editTextBtn', 'sigBtn', 'exportBtn', 'fileName', 'pageCount',
      'selectAllBtn', 'thumbGrid', 'stageBox', 'previewStage', 'emptyState', 'pageWrap',
-     'pageCanvas', 'overlay', 'elementBar', 'elEditBtn', 'elDeleteBtn', 'toast', 'busy',
+     'pageCanvas', 'textLayer', 'overlay', 'elementBar', 'textEditBar', 'revertEditBtn', 'elEditBtn', 'elDeleteBtn', 'toast', 'busy',
      'busyMsg', 'textModal', 'textTitle', 'txtContent', 'txtSize', 'txtColor', 'txtBold',
      'txtOk', 'txtCancel', 'sigModal', 'sigPanelDraw', 'sigPanelUpload', 'sigCanvas',
      'sigClear', 'sigCancel', 'sigUse', 'sigFile', 'sigPreview', 'sigPreviewWrap',
@@ -120,6 +127,10 @@
       state.fileName = file.name;
       state.pages = [];
       state.elements.clear();
+      state.edits.clear();
+      state.textCache.clear();
+      state.editSel = null;
+      state.editMode = false;
       state.selectedElementId = null;
       state.seq = 1;
 
@@ -321,7 +332,7 @@
     if (!confirm(`Excluir ${targets.length} página(s)?`)) return;
     const ids = new Set(targets.map(p => p.id));
     state.pages = state.pages.filter(p => !ids.has(p.id));
-    ids.forEach(id => state.elements.delete(id));
+    ids.forEach(id => { state.elements.delete(id); state.edits.delete(id); });
     if (ids.has(state.activePageId)) state.activePageId = state.pages[0].id;
     state.selectedElementId = null;
     renderThumbnails();
@@ -369,6 +380,7 @@
     els.pageWrap.style.width = Math.floor(vp.width) + 'px';
     els.pageWrap.style.height = Math.floor(vp.height) + 'px';
     renderElements();
+    renderTextLayer();
   }
 
   function observeResize() {
@@ -746,6 +758,48 @@
     els.textBtn.addEventListener('click', () => { if (requireDoc()) openTextModal(null); });
     els.exportBtn.addEventListener('click', exportPdf);
 
+    // modo "editar texto existente"
+    els.editTextBtn.addEventListener('click', () => {
+      if (!requireDoc()) return;
+      state.editMode = !state.editMode;
+      state.editSel = null;
+      els.editTextBtn.classList.toggle('btn-on', state.editMode);
+      els.textEditBar.classList.toggle('hidden', !state.editMode);
+      els.textEditBar.classList.toggle('flex', state.editMode);
+      renderTextLayer();
+      toast(state.editMode
+        ? 'Modo edição: toque num texto do PDF para corrigir.'
+        : 'Modo edição desligado.');
+    });
+
+    $$('.color-chip', els.textEditBar).forEach(chip => {
+      chip.addEventListener('click', () => {
+        const color = chip.dataset.color;
+        state.editDefaultColor = color;
+        const p = getActive();
+        if (p && state.editSel != null) {
+          const em = state.edits.get(p.id);
+          if (em && em.get(state.editSel)) {
+            em.get(state.editSel).color = color;
+            renderTextLayer();
+          }
+        }
+      });
+    });
+
+    els.revertEditBtn.addEventListener('click', () => {
+      const p = getActive();
+      if (p && state.editSel != null) {
+        const em = state.edits.get(p.id);
+        if (em && em.delete(state.editSel)) {
+          renderTextLayer();
+          toast('Trecho revertido ao original.');
+          return;
+        }
+      }
+      toast('Toque num texto editado (verde) para reverter.');
+    });
+
     els.selectAllBtn.addEventListener('click', () => {
       if (!requireDoc()) return;
       const all = state.pages.every(p => p.selected);
@@ -796,7 +850,8 @@
 
   function bindKeyboard() {
     document.addEventListener('keydown', ev => {
-      const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+      const ae = document.activeElement;
+      const typing = /^(INPUT|TEXTAREA)$/.test(ae.tagName) || ae.isContentEditable;
       if (ev.key === 'Escape') {
         els.textModal.classList.add('hidden');
         closeSigModal();
@@ -806,6 +861,138 @@
         ev.preventDefault();
         deleteSelectedElement();
       }
+    });
+  }
+
+  /* ---------------- edição de texto existente (estilo Acrobat) ------------- */
+  async function getTextItems(srcIndex) {
+    if (state.textCache.has(srcIndex)) return state.textCache.get(srcIndex);
+    const page = await state.doc.getPage(srcIndex + 1);
+    const tc = await page.getTextContent();
+    const data = { items: tc.items, styles: tc.styles };
+    state.textCache.set(srcIndex, data);
+    return data;
+  }
+
+  async function renderTextLayer() {
+    const layer = els.textLayer;
+    layer.replaceChildren();
+    layer.classList.toggle('active', state.editMode);
+    if (!state.editMode) return;
+    const p = getActive();
+    if (!p || !state.doc) return;
+
+    const token = ++textLayerToken;
+    const page = await state.doc.getPage(p.srcIndex + 1);
+    const rot = mod(p.baseRotation + p.rotation, 360);
+    const viewport = page.getViewport({ scale: state.scale, rotation: rot });
+    const { items, styles } = await getTextItems(p.srcIndex);
+    if (token !== textLayerToken) return;
+
+    const edits = state.edits.get(p.id);
+    let editable = 0;
+
+    items.forEach((item, i) => {
+      if (!item.str || !item.str.trim()) return;
+      const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+      const fontHeight = Math.hypot(tx[2], tx[3]);
+      if (!fontHeight) return;
+      editable++;
+      const angle = Math.atan2(tx[1], tx[0]);
+      const st = styles[item.fontName];
+      const ascent = (st && st.ascent) || 0.8;
+      const ed = edits ? edits.get(i) : null;
+
+      const span = document.createElement('div');
+      span.className = 'text-span' + (ed && ed.text !== item.str ? ' edited' : '');
+      span.dataset.idx = i;
+      span.textContent = ed ? ed.text : item.str;
+      span.style.left = tx[4] + 'px';
+      span.style.top = (tx[5] - fontHeight * ascent) + 'px';
+      span.style.fontSize = fontHeight + 'px';
+      span.style.width = Math.max(2, item.width * state.scale) + 'px';
+      if (angle) span.style.transform = 'rotate(' + angle + 'rad)';
+      if (ed) { span.style.color = ed.color; span.title = 'Toque para editar novamente'; }
+
+      span.addEventListener('click', ev => beginSpanEdit(ev, span, i));
+      span.addEventListener('blur', () => commitSpanEdit(span, item, i));
+      span.addEventListener('keydown', ev => {
+        ev.stopPropagation();
+        if (ev.key === 'Enter') { ev.preventDefault(); span.blur(); }
+      });
+      layer.appendChild(span);
+    });
+
+    if (!editable && state.editMode) {
+      toast('Esta página não tem texto selecionável (pode ser imagem/scanned).');
+    }
+  }
+
+  function beginSpanEdit(ev, span, i) {
+    ev.stopPropagation();
+    state.editSel = i;
+    if (span.isContentEditable) return;
+    span.contentEditable = 'true';
+    span.classList.add('editing');
+    span.focus();
+    const r = document.createRange();
+    r.selectNodeContents(span);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+
+  function commitSpanEdit(span, item, i) {
+    span.contentEditable = 'false';
+    span.classList.remove('editing');
+    const p = getActive();
+    if (!p) return;
+    const text = span.textContent.replace(/[\s\u00A0]+$/, '');
+    if (!state.edits.get(p.id)) state.edits.set(p.id, new Map());
+    const em = state.edits.get(p.id);
+    const prev = em.get(i);
+    if (text === item.str) {
+      em.delete(i);                       // voltou ao original → remove a edição
+    } else {
+      em.set(i, { text, color: (prev && prev.color) || state.editDefaultColor });
+    }
+    renderTextLayer();
+  }
+
+  // caracteres que a fonte padrão (WinAnsi) não suporta viram "?"
+  const sanitizeWinAnsi = t => t.replace(
+    /[^\u0000-\u00FF\u20AC\u2018\u2019\u201C\u201D\u2013\u2014\u02DC\u2122]/g, '?');
+
+  function drawEditedText(page, item, ed, font) {
+    const m = item.transform;
+    const ex = m[4], ey = m[5];
+    const fontH = Math.hypot(m[2], m[3]) || 12;
+    const angleDeg = Math.atan2(m[1], m[0]) * 180 / Math.PI;
+    const w = item.width || 0;
+
+    // 1) apaga o texto original com um retângulo branco na área exata
+    if (w > 0) {
+      page.drawRectangle({
+        x: ex - 0.5, y: ey - 1,
+        width: w + 1, height: fontH + 2,
+        color: rgb(1, 1, 1),
+        rotate: degrees(angleDeg),
+      });
+    }
+    if (!ed.text) return;                 // texto vazio = só apagar
+
+    // 2) reescreve, encolhendo se não couber na largura original
+    const text = sanitizeWinAnsi(ed.text);
+    let size = fontH;
+    try {
+      const tw = font.widthOfTextAtSize(text, size);
+      if (w > 0 && tw > w) size = Math.max(4, size * (w / tw) * 0.98);
+    } catch (_) { /* ignora métricas */ }
+    page.drawText(text, {
+      x: ex, y: ey,
+      size, font,
+      color: hexToRgb(ed.color || '#111827'),
+      rotate: degrees(angleDeg),
     });
   }
 
@@ -901,6 +1088,16 @@
         const T = mod(p.baseRotation + p.rotation, 360);
         page.setRotation(degrees(T));
         const mb = page.getMediaBox();
+        // 1) edições de texto existente (apaga + reescreve)
+        const em = state.edits.get(p.id);
+        if (em && em.size) {
+          const tc = await getTextItems(p.srcIndex);
+          for (const [idx, ed] of em) {
+            const item = tc.items[idx];
+            if (item) drawEditedText(page, item, ed, font);
+          }
+        }
+        // 2) elementos sobrepostos (caixas de texto novas e assinaturas)
         for (const el of (state.elements.get(p.id) || [])) {
           await drawElement(out, page, el, T, mb, font, fontBold, imgCache);
         }
